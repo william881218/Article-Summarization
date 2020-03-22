@@ -5,6 +5,7 @@ import re
 import sys
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
+from torch.autograd import Variable
 
 word_vec_d = 50
 glove_path = './glove.6B.50d.txt'
@@ -13,6 +14,7 @@ def read_glove():
     glove = open(glove_path).read().split('\n')
     glove = [line.split(' ') for line in glove]
     return {line[0]:line[1:] for line in glove}
+#in order to read glove only once
 glove = read_glove()
 
 class Article():
@@ -25,11 +27,11 @@ class Article():
             self.sentence_cut.append((self.text_size, self.text_size + len(line)))
             self.text_size += len(line)
             for word in line:
-                #self.tokened_text = np.append(self.tokened_text, [word2index[word]])
-                self.tokened_text = np.append(self.tokened_text, [index2vec[word2index[word]]])
+                self.tokened_text = np.append(self.tokened_text, [word2index[word]])
+                #self.tokened_text = np.append(self.tokened_text, [index2vec[word2index[word]]])
         self.extractive_gt = article['extractive_summary']
-        #self.abstractive_gt = [word2index[word] for word in article['summary']]
-        self.abstractive_gt = [index2vec[word2index[word]] for word in article['summary']]
+        self.abstractive_gt = [word2index[word] for word in article['summary']]
+        #self.abstractive_gt = [index2vec[word2index[word]] for word in article['summary']]
     def show(self):
         print('id: {}, text_size: {}'.format(self.id, self.text_size))
         print('tokened_text:')
@@ -54,7 +56,7 @@ class ArticleDataset(Dataset):
         datas = [json.loads(line) for line in lines]
         self.articles = []
         self.word2index = {}
-        self.index2vec = ['']
+        self.index2vec = [torch.from_numpy(np.zeros([1, word_vec_d]))]
         for data in datas:
             sys.stderr.write(str(data['id'])+'\n')
             data['text'] = [nltk.word_tokenize(data['text'][begin:end]) for begin, end in data['sent_bounds'] ]
@@ -75,13 +77,12 @@ class ArticleDataset(Dataset):
                     except KeyError:
                         self.index2vec.append(np.random.normal(size=(1, word_vec_d), scale=0.2))
             self.articles.append(Article(data, self.word2index, self.index2vec))
-        pass
     def __len__(self):
         return len(self.articles)
     def __getitem__(self, idx):
         article = self.articles[int(idx)]
-        extractive_gt = np.zeros(shape=(1, article.text_size))
+        extractive_gt = np.zeros(shape=(article.text_size))
         ext_cut = article.sentence_cut[int(article.extractive_gt)]
-        extractive_gt[0, ext_cut[0]:ext_cut[1]] = 1.
-        return {'text': torch.from_numpy(article.tokened_text.reshape([article.text_size, word_vec_d]).astype(dtype='float32')),
-                'extractive_gt': torch.from_numpy(extractive_gt)}
+        extractive_gt[ext_cut[0]:ext_cut[1]] = 1.
+        return (torch.from_numpy(article.tokened_text.reshape([article.text_size]).astype(dtype='int32')),
+                torch.from_numpy(extractive_gt))

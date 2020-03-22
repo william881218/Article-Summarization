@@ -6,12 +6,8 @@ import time
 import math
 from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence
 
-n_hidden = 256
-n_epochs = 100000
-print_every = 5000
-plot_every = 1000
-learning_rate = 0.004 # If you set this too high, it might explode. If too low, it might not learn
-training_data_path = './short.jsonl'
+batch_size = 26
+training_data_path = './train.jsonl'
 
 def pad_collate(batch):
     x_data, y_data = zip(*batch)
@@ -27,22 +23,26 @@ def pad_collate(batch):
 
 def main():
     training_dataset = ArticleDataset(training_data_path)
+
+    #prepare embedding layer
+    embedding = nn.Embedding(training_dataset.vocab_size, word_vec_d)
+    print(training_dataset.index2vec)
+    embedding.weight.data.copy_(torch.from_numpy(training_dataset.index2vec.astype('float32')))
+
+    #print(embd_vec)
     #print(training_dataset)
     #print(training_dataset[1])
-    article_data_loader = DataLoader(training_dataset, batch_size=2, shuffle=True, collate_fn=pad_collate)
-    for i_ipoch, (x_padded, y_padded, x_lens, y_lens) in enumerate(article_data_loader):
-        print('i_ipoch = ', i_ipoch)
-        print('x_padded')
-        print(x_padded)
-        print('y_padded')
-        print(y_padded)
-        print('x_len')
-        print(x_lens)
-        print('y_len')
-        print(y_lens)
+    article_data_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
 
-        #x_packed = pack_padded_sequence(x_padded, x_lens, batch_first=True, enforce_sorted=False)
-        break
+    #training start
+    for i_ipoch, (x_padded, y_padded, x_lens, y_lens) in enumerate(article_data_loader):
+        try:
+            x_embed = embedding(x_padded.long())
+        except RuntimeError:
+            print(x_padded)
+        x_embed = Variable(x_embed)
+        x_packed = pack_padded_sequence(x_embed, x_lens, batch_first=True, enforce_sorted=False)
+        print('ipoch {}'.format(i_ipoch))
     """
     for i_batch, sample_batched in enumerate(dataloader):
         print(i_batch, sample_batched['text'].size(), sample_batched['extractive_gt'].size())

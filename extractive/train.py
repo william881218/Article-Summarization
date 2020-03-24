@@ -4,7 +4,7 @@ from model import *
 import random
 import time
 import math
-from torch.nn.utils.rnn import pack_padded_sequence, pad_sequence, pad_packed_sequence
+from torch.nn.utils.rnn import pad_sequence
 
 batch_size = 2
 training_data_path = './short.jsonl'
@@ -27,7 +27,7 @@ def pad_collate(batch):
 
 def main():
 
-    #prepare training dataset with DataLoader
+    #prepare training dataset with DataLoader, which will return a batched, padded sample
     training_dataset = ArticleDataset(training_data_path)
     article_data_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
 
@@ -38,24 +38,17 @@ def main():
     #creating model
     model = RNNTagger(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim, output_size=tag_type_num)
 
-    rnn = nn.GRU(word_vec_d, rnn_hidden_dim, batch_first=True)
-    hidden2tag = nn.Linear(rnn_hidden_dim, tag_type_num)
     #training start
     for i_ipoch, (x_padded, y_padded, x_lens, y_lens) in enumerate(article_data_loader):
         #Convert word to vector
         x_embed = embedding(x_padded.long())
         x_embed = Variable(x_embed)
-
-        #padding and packing
+        #packing
         x_packed = pack_padded_sequence(x_embed, x_lens, batch_first=True, enforce_sorted=False)
 
-        #feed into the rnn model, get the output
-        #output = model(x_packed)
-        output_packed, _ = rnn(x_packed)
-        output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True)
-        output_padded = hidden2tag(output_padded)
-
-        print(output_padded)
+        output = model(x_packed)
+        print(output)
+        print(output.shape)
         print('ipoch {}'.format(i_ipoch))
         return
     """

@@ -5,11 +5,16 @@ import random
 import time
 import math
 from torch.nn.utils.rnn import pad_sequence
+from torch.nn import BCEWithLogitsLoss
+from torch.nn.functional import one_hot
 
-batch_size = 2
-training_data_path = './short.jsonl'
-rnn_hidden_dim=32
+batch_size = 10
+training_data_path = './train.jsonl'
+learning_rate = 0.1
+rnn_hidden_dim=64
 tag_type_num=2
+ipoch_num = 100
+all_losses = []
 
 
 
@@ -27,105 +32,59 @@ def pad_collate(batch):
 
 def main():
 
+
     #prepare training dataset with DataLoader, which will return a batched, padded sample
     training_dataset = ArticleDataset(training_data_path)
     article_data_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
 
     #prepare embedding layer
-    embedding = nn.Embedding(training_dataset.vocab_size, word_vec_d)
-    embedding.weight.data.copy_(torch.from_numpy(training_dataset.index2vec.astype('float32')))
+    embedding = WordEmbedding(training_dataset.vocab_size, word_vec_d, training_dataset.index2vec)
 
     #creating model
-    model = RNNTagger(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim, output_size=tag_type_num)
+    rnn = RNNTagger(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim, output_size=tag_type_num)
+    optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
+    criterion = BCEWithLogitsLoss()
+
+    if torch.cuda.is_available():
+        rnn = rnn.cuda()
+        embedding = embedding.cuda()
+
 
     #training start
-    for i_ipoch, (x_padded, y_padded, x_lens, y_lens) in enumerate(article_data_loader):
-        #Convert word to vector
-        x_embed = embedding(x_padded.long())
-        x_embed = Variable(x_embed)
-        #packing
-        x_packed = pack_padded_sequence(x_embed, x_lens, batch_first=True, enforce_sorted=False)
+    for i_ipoch in range(ipoch_num):
+        for i_batch, (x_padded, y_padded, x_lens, y_lens) in enumerate(article_data_loader):
+            x_padded = x_padded.long()
+            if torch.cuda.is_available():
+                x_padded = x_padded.cuda()
+                y_padded = y_padded.cuda()
+            #Convert word to vector
+            x_embed = embedding(x_padded)
+            x_embed = Variable(x_embed)
 
-        output = model(x_packed)
-        print(output)
-        print(output.shape)
-        print('ipoch {}'.format(i_ipoch))
-        return
-    """
-    for i_batch, sample_batched in enumerate(dataloader):
-        print(i_batch, sample_batched['text'].size(), sample_batched['extractive_gt'].size())
-        if i_batch > 3:
-            break
-    """
+            #packing
+            x_packed = pack_padded_sequence(x_embed, x_lens, batch_first=True, enforce_sorted=False)
+
+            #clear the gradient
+            optimizer.zero_grad()
+
+            #Feeding into rnn and get an output
+            output = rnn(x_packed)
+
+            #evaluate
+            y_padded = one_hot(y_padded.long(), 2).type_as(output)
+            loss = criterion(output, y_padded)
+            loss.backward()
+            optimizer.step()
+            all_losses.append(loss.data)
+            if i_batch % 20 == 0:
+                print('ipoch {}, batch {}, current loss: {}'.format(i_ipoch, i_batch, all_losses[-1]))
+    #training end
+    torch.save(rnn, 'ipoch={}_lr={}_data={}.pt'.format(ipoch_num, learning_rate, training_data_path[2:]))
+    print('Losses:\n----------------')
+    for i in all_losses:
+        print(i)
 
 
 
 if __name__ == '__main__':
     main()
-
-
-"""
-def categoryFromOutput(output):
-    top_n, top_i = output.data.topk(1) # Tensor out of Variable with .data
-    category_i = top_i[0][0]
-    return all_categories[category_i], category_i
-
-def randomChoice(l):
-    return l[random.randint(0, len(l) - 1)]
-
-def randomTrainingPair():
-    category = randomChoice(all_categories)
-    line = randomChoice(category_lines[category])
-    category_tensor = Variable(torch.LongTensor([all_categories.index(category)]))
-    line_tensor = Variable(lineToTensor(line))
-    return category, line, category_tensor, line_tensor
-
-rnn = RNN(n_letters, n_hidden, n_categories)
-optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
-criterion = nn.NLLLoss()
-
-def train(category_tensor, line_tensor):
-    hidden = rnn.initHidden()
-    optimizer.zero_grad()
-
-    for i in range(line_tensor.size()[0]):
-        output, hidden = rnn(line_tensor[i], hidden)
-
-    loss = criterion(output, category_tensor)
-    loss.backward()
-
-    optimizer.step()
-
-    return output, loss.data
-
-# Keep track of losses for plotting
-current_loss = 0
-all_losses = []
-
-def timeSince(since):
-    now = time.time()
-    s = now - since
-    m = math.floor(s / 60)
-    s -= m * 60
-    return '%dm %ds' % (m, s)
-
-start = time.time()
-
-for epoch in range(1, n_epochs + 1):
-    category, line, category_tensor, line_tensor = randomTrainingPair()
-    output, loss = train(category_tensor, line_tensor)
-    current_loss += loss
-
-    # Print epoch number, loss, name and guess
-    if epoch % print_every == 0:
-        guess, guess_i = categoryFromOutput(output)
-        correct = '✓' if guess == category else '✗ (%s)' % category
-        print('%d %d%% (%s) %.4f %s / %s %s' % (epoch, epoch / n_epochs * 100, timeSince(start), loss, line, guess, correct))
-
-    # Add current loss avg to list of losses
-    if epoch % plot_every == 0:
-        all_losses.append(current_loss / plot_every)
-        current_loss = 0
-
-torch.save(rnn, 'char-rnn-classification1_6lr=3256.pt')
-"""

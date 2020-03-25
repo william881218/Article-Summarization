@@ -27,5 +27,7 @@ class RNNTagger(nn.Module):
         #output = model(x_packed)
         output_packed, _ = self.rnn(packedSequence)
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True)
+        #print('output_padded: ~~~~~~``')
+        #print(output_padded)
         output_padded = self.hidden2tag(output_padded)
-        return output_padded
+        return output_padded, output_lengths

@@ -19,9 +19,11 @@ class RNNTagger(nn.Module):
         self.hidden_dim = hidden_dim
         # The GRU takes word embeddings as inputs, and outputs hidden states
         # with dimensionality hidden_dim.
-        self.rnn = nn.GRU(embedding_dim, hidden_dim, batch_first=True)
+        self.rnn = nn.GRU(embedding_dim, hidden_dim, batch_first=True, bidirectional=True)
         # The linear layer that maps from hidden state space to tag space
-        self.hidden2tag = nn.Linear(hidden_dim, output_size)
+        self.hidden2tag_1 = nn.Linear(hidden_dim * 2, 64)
+        self.sigmoid = nn.Sigmoid()
+        self.hidden2tag_2 = nn.Linear(64, output_size)
     def forward(self, packedSequence):
         #feed into the rnn model, get the output
         #output = model(x_packed)
@@ -29,5 +31,7 @@ class RNNTagger(nn.Module):
         output_padded, output_lengths = pad_packed_sequence(output_packed, batch_first=True)
         #print('output_padded: ~~~~~~``')
         #print(output_padded)
-        output_padded = self.hidden2tag(output_padded)
+        output_padded = self.hidden2tag_1(output_padded)
+        output_padded = self.sigmoid(output_padded)
+        output_padded = self.hidden2tag_2(output_padded)
         return output_padded, output_lengths

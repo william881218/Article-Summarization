@@ -8,12 +8,12 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.nn import BCEWithLogitsLoss
 from torch.nn.functional import one_hot
 
-batch_size = 10
-training_data_path = './train.jsonl'
-learning_rate = 0.1
+batch_size = 5
+training_data_path = './medium.jsonl'
+learning_rate = 0.05
 rnn_hidden_dim=64
 tag_type_num=2
-ipoch_num = 100
+ipoch_num = 10
 all_losses = []
 
 
@@ -64,19 +64,30 @@ def main():
             #packing
             x_packed = pack_padded_sequence(x_embed, x_lens, batch_first=True, enforce_sorted=False)
 
-            #clear the gradient
-            optimizer.zero_grad()
+
 
             #Feeding into rnn and get an output
-            output = rnn(x_packed)
+            output, output_lengths = rnn(x_packed)
+            y_padded = one_hot(y_padded.long(), 2).type_as(output)
 
             #evaluate
-            y_padded = one_hot(y_padded.long(), 2).type_as(output)
-            loss = criterion(output, y_padded)
-            loss.backward()
+            #clear the gradient
+            optimizer.zero_grad()
+            loss_sum = 0
+
+            #calculate loss acording to each sentence's length
+            for i_sent, sent_len in enumerate(output_lengths):
+                loss = criterion(output[i_sent, 0:sent_len], y_padded[i_sent, 0:sent_len])
+                #
+                loss = loss / batch_size
+                loss_sum += loss.data.item()
+                loss.backward(retain_graph= False if i_sent == batch_size - 1 else True)
+
             optimizer.step()
-            all_losses.append(loss.data)
-            if i_batch % 20 == 0:
+
+
+            all_losses.append(loss_sum / batch_size)
+            if i_batch % 1 == 0:
                 print('ipoch {}, batch {}, current loss: {}'.format(i_ipoch, i_batch, all_losses[-1]))
     #training end
     torch.save(rnn, 'ipoch={}_lr={}_data={}.pt'.format(ipoch_num, learning_rate, training_data_path[2:]))

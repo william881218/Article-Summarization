@@ -10,20 +10,22 @@ from torch.nn.functional import one_hot
 
 batch_size = 5
 valid_batch_size = 20
-training_data_path = './valid_short.jsonl'
-validation_data_path = './valid_short.jsonl'
-learning_rate = 0.5
-SGD_momentum = 0.7
+training_data_path = './medium.jsonl'
+validation_data_path = './medium.jsonl'
+learning_rate = 0.1
+SGD_momentum = 0.8
 rnn_hidden_dim=64
 tag_type_num=1
-ipoch_num = 10
+ipoch_num = 100
 all_losses = []
 
 
 
 def pad_collate(batch):
-    #print(batch)
+    #sort the batch according to sentence's length (requested by padding)
     batch.sort(key=lambda x: len(x[0]), reverse=True)
+
+    #Pad each label and calculate each sentence's length
     x_data, y_data, idx = zip(*batch)
     x_data = list(x_data)
     y_data = list(y_data)
@@ -48,33 +50,32 @@ def validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset)
 
         #Feeding into rnn and get an output
         output, output_lengths = rnn(x_packed)
+        output = output.view(valid_batch_size, -1)
 
+        #Calculate accuracy
         acc_count = 0
         for i_sent, sent_len in enumerate(output_lengths):
             extractive_gt = validation_dataset.article(idx[i_sent]).extractive_gt
             predicted_gt = validation_dataset.predict(idx[i_sent], output[i_sent, 0:sent_len])
             acc_count += (predicted_gt == extractive_gt)
-            #print(predicted_gt, extractive_gt)
 
         return acc_count / valid_batch_size, len(idx)
 
+#Used to generate validation DataLoader iterator
 def cycle(iterable):
     while True:
         for x in iterable:
             yield x
-
 
 def main():
     #prepare training dataset with DataLoader, which will return a batched, padded sample
     training_dataset = ArticleDataset(training_data_path)
     training_data_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
 
-
     #prepare validation dataset
     validation_dataset = ArticleDataset(validation_data_path)
     valid_data_loader = DataLoader(validation_dataset, batch_size = valid_batch_size, shuffle=True, collate_fn=pad_collate)
     valid_dataLoader_it = iter(cycle(valid_data_loader))
-
 
     #prepare embedding layer
     trainingSet_embedding = WordEmbedding(training_dataset.vocab_size, word_vec_d, training_dataset.index2vec)
@@ -82,7 +83,7 @@ def main():
 
     #creating model and optimizer
     rnn = RNNTagger(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim, output_size=tag_type_num)
-    optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate)
+    optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate, momentum=SGD_momentum)
 
     #use pos_weight in BCELoss to handle data imbalance
     pos_tag = training_dataset.positive_tag
@@ -99,10 +100,10 @@ def main():
     #training start
     for i_ipoch in range(ipoch_num):
         for i_batch, (x_padded, y_padded, x_lens, y_lens, sent_idx) in enumerate(training_data_loader):
-            x_padded = x_padded
             if torch.cuda.is_available():
                 x_padded = x_padded.cuda(GPU_DEVICE)
                 y_padded = y_padded.cuda(GPU_DEVICE)
+
             #Convert word to vector
             x_embed = trainingSet_embedding(x_padded)
             x_embed = Variable(x_embed)
@@ -113,44 +114,28 @@ def main():
             #Feeding into rnn and get an output
             output, output_lengths = rnn(x_packed)
             output = output.view(batch_size, -1)
-            #print(output)
             y_padded = y_padded.type_as(output)
 
-            #evaluate
-            #clear the gradient
-            optimizer.zero_grad()
+
+            #evaluate start
             loss_sum = 0
-            loss = criterion(output, y_padded)
-
-
-            """
             #calculate loss acording to each sentence's length
             for i_sent, sent_len in enumerate(output_lengths):
-                #print('------fuck------')
-                #print(output[i_sent, 0:sent_len], '\n', y_padded[i_sent, 0:sent_len])
-
-
+                optimizer.zero_grad()
                 loss = criterion(output[i_sent, 0:sent_len], y_padded[i_sent, 0:sent_len])
-                #print(output[i_sent, 0:sent_len], '\n', y_padded[i_sent, 0:sent_len])
-                #
                 loss_sum += loss.data.item()
-                loss.backward(retain_graph= False if i_sent == batch_size - 1 else True)
-            """
+                loss.backward(retain_graph=True)
+                optimizer.step()
 
-            optimizer.step()
-
-
-            all_losses.append(loss.data.item())
-            if i_batch % 5 == 0:
+            #record the losses and print the info
+            all_losses.append(loss_sum)
+            if i_batch % 10 == 0:
                 valid_acc, valid_num = validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset)
                 print('ipoch [{}/{}], step {}, current loss: {}, valid_acc: {}'.format(i_ipoch+1, ipoch_num, i_batch, all_losses[-1], valid_acc))
-    #training end
+
+    #training end, save the model
     torch.save(rnn, 'ipoch={}_lr={}_data={}.pt'.format(ipoch_num, learning_rate, training_data_path[2:]))
-    #print('Losses:\n----------------')
-    #for i in all_losses:
-    #    print(i)
-
-
+    return
 
 if __name__ == '__main__':
     main()

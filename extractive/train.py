@@ -8,10 +8,10 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.nn import BCEWithLogitsLoss
 from torch.nn.functional import one_hot
 
-batch_size = 5
+batch_size = 10
 valid_batch_size = 20
-training_data_path = './medium.jsonl'
-validation_data_path = './medium.jsonl'
+training_data_path = './train_short.jsonl'
+validation_data_path = './train_short.jsonl'
 learning_rate = 0.1
 SGD_momentum = 0.8
 rnn_hidden_dim=64
@@ -50,7 +50,7 @@ def validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset)
 
         #Feeding into rnn and get an output
         output, output_lengths = rnn(x_packed)
-        output = output.view(valid_batch_size, -1)
+        output = output.view(output.shape[0], -1)
 
         #Calculate accuracy
         acc_count = 0
@@ -83,7 +83,8 @@ def main():
 
     #creating model and optimizer
     rnn = RNNTagger(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim, output_size=tag_type_num)
-    optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate, momentum=SGD_momentum)
+    #optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate, momentum=SGD_momentum)
+    optimizer = torch.optim.Adam(rnn.parameters(), lr=0.001)
 
     #use pos_weight in BCELoss to handle data imbalance
     pos_tag = training_dataset.positive_tag
@@ -113,7 +114,7 @@ def main():
 
             #Feeding into rnn and get an output
             output, output_lengths = rnn(x_packed)
-            output = output.view(batch_size, -1)
+            output = output.view(output.shape[0], -1)
             y_padded = y_padded.type_as(output)
 
 
@@ -129,9 +130,9 @@ def main():
 
             #record the losses and print the info
             all_losses.append(loss_sum)
-            if i_batch % 10 == 0:
+            if i_batch % 1 == 0:
                 valid_acc, valid_num = validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset)
-                print('ipoch [{}/{}], step {}, current loss: {}, valid_acc: {}'.format(i_ipoch+1, ipoch_num, i_batch, all_losses[-1], valid_acc))
+                print('ipoch [{}/{}], step {}, current loss: {}, size {}, valid_acc: {}, size: {}'.format(i_ipoch+1, ipoch_num, i_batch, all_losses[-1], len(output_lengths), valid_acc, valid_num))
 
     #training end, save the model
     torch.save(rnn, 'ipoch={}_lr={}_data={}.pt'.format(ipoch_num, learning_rate, training_data_path[2:]))

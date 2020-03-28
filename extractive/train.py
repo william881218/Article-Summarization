@@ -14,11 +14,11 @@ batch_size = 16
 validation_batch_size = 50
 learning_rate = 0.1
 using_adam = True
-adam_learning_rate = 0.01
+adam_learning_rate = 0.05
 SGD_momentum = 0.8
 rnn_hidden_dim=64
 tag_type_num=1
-ipoch_num = 50
+ipoch_num = 30
 all_losses = []
 
 def pad_collate(batch):
@@ -72,6 +72,7 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
     #prepare training dataset with DataLoader, which will return a batched, padded sample
     training_dataset = ArticleDataset(training_dataset_path)
     training_data_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
+    training_dataLoader_it = iter(cycle(training_data_loader))
 
     #prepare validation dataset
     validation_dataset = ArticleDataset(validation_dataset_path)
@@ -134,16 +135,16 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
             #record the losses and print the info every 10 batch
             all_losses.append(loss_sum)
             if i_batch % 10 == 0:
+                train_acc, train_num = validate(rnn, training_dataLoader_it, trainingSet_embedding, training_dataset)
                 valid_acc, valid_num = validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset)
-                print('ipoch [{}/{}], step [{}/{}], current loss: {}, size {}, valid_acc: {}, size: {}'.format(i_ipoch+1,
-                      ipoch_num, i_batch + 1, len(training_dataset) // batch_size + 1, all_losses[-1], len(output_lengths), valid_acc, valid_num))
+                print('ipoch [{}/{}], step [{}/{}], loss: {}, train_acc: {}, valid_acc: {}'.format(i_ipoch+1,
+                      ipoch_num, i_batch + 1, len(training_dataset) // batch_size + 1, all_losses[-1], train_acc, valid_acc))
 
-    #training end, save the model
-    if model_name == None:
-        torch.save(rnn, 'ipoch={}_lr={}_train={}_opt={}.pt'.format(ipoch_num, learning_rate, training_dataset_path[2:], 'Adam' if using_adam else 'SGD'))
-    else:
-        torch.save(rnn, model_name)
-    return
+                #training end, save the model
+                torch.save(rnn, '{}/ipoch={}_ibatch={}_loss={}_train_acc={}_valid_acc={}.pt'.
+                format(model_name, i_ipoch, i_batch, all_losses[-1], train_acc, valid_acc))
+
+
 
 if __name__ == '__main__':
     if len(sys.argv) == 1:
@@ -153,6 +154,6 @@ if __name__ == '__main__':
     elif len(sys.argv) == 4:
         main(sys.argv[1], sys.argv[2], sys.argv[3])
     else:
-        print('usage: python train.py [training dataset path] [validation dataset path] [model name]')
+        print('usage: python train.py [training dataset path] [validation dataset path] [model directory path]')
         print('if path not assigned, training dataset: {}, validation dataset: {}'.format(TRAINING_DATASET_PATH, VALIDATION_validation_batch_size))
         exit()

@@ -67,7 +67,7 @@ def cycle(iterable):
         for x in iterable:
             yield x
 
-def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VALIDATION_DATASET_PATH):
+def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VALIDATION_DATASET_PATH, model_name=None):
 
     #prepare training dataset with DataLoader, which will return a batched, padded sample
     training_dataset = ArticleDataset(training_dataset_path)
@@ -139,7 +139,10 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
                       ipoch_num, i_batch + 1, len(training_dataset) // batch_size + 1, all_losses[-1], len(output_lengths), valid_acc, valid_num))
 
     #training end, save the model
-    torch.save(rnn, 'ipoch={}_lr={}_train={}_opt={}.pt'.format(ipoch_num, learning_rate, training_dataset_path[2:], 'Adam' if using_adam else 'SGD'))
+    if model_name == None:
+        torch.save(rnn, 'ipoch={}_lr={}_train={}_opt={}.pt'.format(ipoch_num, learning_rate, training_dataset_path[2:], 'Adam' if using_adam else 'SGD'))
+    else:
+        torch.save(rnn, model_name)
     return
 
 if __name__ == '__main__':
@@ -147,7 +150,9 @@ if __name__ == '__main__':
         main()
     elif len(sys.argv) == 3:
         main(sys.argv[1], sys.argv[2])
+    elif len(sys.argv) == 4:
+        main(sys.argv[1], sys.argv[2], sys.argv[3])
     else:
-        print('usage: python train.py [training dataset path] [validation dataset path]')
+        print('usage: python train.py [training dataset path] [validation dataset path] [model name]')
         print('if path not assigned, training dataset: {}, validation dataset: {}'.format(TRAINING_DATASET_PATH, VALIDATION_validation_batch_size))
         exit()

@@ -9,8 +9,12 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 
+
 GPU_DEVICE = 1
 word_vec_d = 50
+SOS_ID = 0
+EOS_ID = 1
+PAD_ID = 2
 glove_path = '../extractive/glove.6B.50d.txt'
 softmax = nn.Softmax(dim=1)
 prediction_softmax = nn.Softmax(dim=0)
@@ -35,9 +39,10 @@ class Article():
         self.id = article['id']
         self.index = int(idx)
         self.text_size = len(article['text'])
-        self.text = torch.Tensor([word2index[word] for word in article['text']])
-        self.summary_size = 0 if predicting else len(article['summary'])
-        self.summary = None if predicting else torch.Tensor([word2index[word] for word in article['summary']])
+        a = np.array([index2vec[word2index[word]] for word in article['text']]).astype('float32')
+        self.text = torch.from_numpy(a)
+        self.summary_size = 0 if predicting else len(article['summary']) + 1
+        self.summary = None if predicting else torch.Tensor([word2index[word] for word in article['summary']] + [EOS_ID])
 
     def show(self):
         print('id: {}, index: {}, text_size: {}, summary_size: {}'.format(self.id, self.index, self.text_size, self.summary_size))
@@ -61,31 +66,32 @@ class ArticleDataset(Dataset):
         datas = [json.loads(line) for line in lines]
 
         #initialize dict with SOS and EOS
-        self.word2index = {'SOS' : 0, 'EOS' : 1}
-        self.index2word = {0: 'SOS', 1: 'EOS'}
+        self.word2index = {'<SOS>' : 0, '<EOS>' : 1, '<PAD>': 2}
+        self.index2word = {0: '<SOS>', 1: '<EOS>', 2: '<PAD>'}
 
-        # word embedding of 'SOS' and 'EOS'
-        self.index2vec = [[0 for _ in range(word_vec_d)], [0 for _ in range(word_vec_d)]]
+        # word embedding of 'SOS' and 'EOS' and 'PAD'
+        self.index2vec = [[0. for _ in range(word_vec_d)] for __ in range(3)]
 
-        #start saving each line into class Article
+        #start storing each line into class Article
         self.articles = []
         for data in datas:
             #hadling i-th data
             sys.stderr.write('reading article ' + str(data['id'])+'...\n')
 
-            #handle the exception that there is no text
-            if len(data['text'][0]) == 0:
-                continue
-
             #tokenize the words
             data['text'] = nltk.word_tokenize(data['text'])
             data['summary'] = [] if predicting else nltk.word_tokenize(data['summary'])
+
+            #handle the exception that there is no text
+            if len(data['text'][0]) == 0:
+                continue
 
             #creating word2index , index2word, index2vec dict
             for word in data['text'] + data['summary']:
                 #if the word hasn't been added into the dict
                 if word not in self.word2index:
                     #add it
+                    print('{} -> {}'.format(word, len(self.index2vec)))
                     self.word2index[word] = len(self.index2vec)
                     self.index2word[len(self.index2vec)] = word
                     try:
@@ -98,6 +104,8 @@ class ArticleDataset(Dataset):
 
         #total # of vocabulary (including 0 -> 0-vec)
         self.vocab_size = len(self.index2vec)
+        print('fuck')
+
 
     def __len__(self):
         return len(self.articles)
@@ -128,6 +136,3 @@ class ArticleDataset(Dataset):
 
     def article(self, article_idx):
         return self.articles[int(article_idx)]
-
-training_dataset = ArticleDataset('../data/short.jsonl')
-print(training_dataset[0])

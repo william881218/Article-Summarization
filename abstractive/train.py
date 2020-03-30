@@ -8,12 +8,12 @@ from torch.nn.utils.rnn import pad_sequence
 from torch.nn import BCEWithLogitsLoss
 from torch.nn.functional import one_hot
 
-TRAINING_DATASET_PATH = './train.jsonl'
-VALIDATION_DATASET_PATH = './valid.jsonl'
-batch_size = 16
-validation_batch_size = 50
+TRAINING_DATASET_PATH = '../data/short.jsonl'
+VALIDATION_DATASET_PATH = '../data/short.jsonl'
+batch_size = 5
+validation_batch_size = 5
 learning_rate = 0.1
-using_adam = True
+using_adam = False
 adam_learning_rate = 0.05
 SGD_momentum = 0.8
 rnn_hidden_dim=64
@@ -22,6 +22,7 @@ ipoch_num = 30
 all_losses = []
 
 def pad_collate(batch):
+    print(batch)
     #sort the batch according to sentence's length (requested by padding)
     batch.sort(key=lambda x: len(x[0]), reverse=True)
 
@@ -31,9 +32,9 @@ def pad_collate(batch):
     y_data = list(y_data)
     x_len = [len(x) for x in x_data]
     y_len = [len(y) for y in y_data]
-    x_padded = pad_sequence(x_data, batch_first=True, padding_value=0)
-    y_padded = pad_sequence(y_data, batch_first=True, padding_value=0)
-    return x_padded.long(), y_padded, x_len, y_len, idx
+    x_padded = pad_sequence(x_data, batch_first=True, padding_value=PAD_ID)
+    y_padded = pad_sequence(y_data, batch_first=True, padding_value=PAD_ID)
+    return x_padded, y_padded, x_len, y_len, list(idx)
 
 def validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset):
     with torch.no_grad():
@@ -41,9 +42,6 @@ def validate(rnn, valid_dataLoader_it, validation_embedding, validation_dataset)
         if torch.cuda.is_available():
             x_padded = x_padded.cuda(GPU_DEVICE)
             y_padded = y_padded.cuda(GPU_DEVICE)
-
-        #Convert word to vector
-        x_embed = validation_embedding(x_padded)
 
         #packing
         x_packed = pack_padded_sequence(x_embed, x_len, batch_first=True, enforce_sorted=False)
@@ -74,17 +72,16 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
     training_data_loader = DataLoader(training_dataset, batch_size=batch_size, shuffle=True, collate_fn=pad_collate)
     training_dataLoader_it = iter(cycle(training_data_loader))
 
+    """
     #prepare validation dataset
     validation_dataset = ArticleDataset(validation_dataset_path)
     valid_data_loader = DataLoader(validation_dataset, batch_size = validation_batch_size, shuffle=True, collate_fn=pad_collate)
     valid_dataLoader_it = iter(cycle(valid_data_loader))
-
-    #prepare embedding layer
-    trainingSet_embedding = WordEmbedding(training_dataset.vocab_size, word_vec_d, training_dataset.index2vec)
-    validation_embedding = WordEmbedding(validation_dataset.vocab_size, word_vec_d, validation_dataset.index2vec)
+    """
 
     #create model
-    rnn = RNNTagger(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim, output_size=tag_type_num)
+    rnn = Seq2seq(embedding_dim=word_vec_d, hidden_dim=rnn_hidden_dim,
+                  output_size=training_dataset.vocab_size, index2word=training_dataset.index2word)
 
     #Choose optimizer
     optimizer = torch.optim.SGD(rnn.parameters(), lr=learning_rate, momentum=SGD_momentum)

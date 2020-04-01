@@ -15,7 +15,7 @@ word_vec_d = 50
 SOS_ID = 0
 EOS_ID = 1
 PAD_ID = 2
-glove_path = '../extractive/glove.6B.50d.txt'
+glove_path = '../glove.6B.50d.txt'
 softmax = nn.Softmax(dim=1)
 prediction_softmax = nn.Softmax(dim=0)
 if torch.cuda.is_available():
@@ -27,7 +27,7 @@ if torch.cuda.is_available():
 def read_glove():
     glove = open(glove_path).read().split('\n')
     glove = [line.split(' ') for line in glove]
-    return {line[0]:line[1:] for line in glove}
+    return {line[0]:[float(x) for x in line[1:]] for line in glove}
 
 #read glove only once
 print('start glove reading...')
@@ -91,7 +91,6 @@ class ArticleDataset(Dataset):
                 #if the word hasn't been added into the dict
                 if word not in self.word2index:
                     #add it
-                    print('{} -> {}'.format(word, len(self.index2vec)))
                     self.word2index[word] = len(self.index2vec)
                     self.index2word[len(self.index2vec)] = word
                     try:
@@ -104,7 +103,6 @@ class ArticleDataset(Dataset):
 
         #total # of vocabulary (including 0 -> 0-vec)
         self.vocab_size = len(self.index2vec)
-        print('fuck')
 
 
     def __len__(self):
@@ -136,3 +134,4 @@ class ArticleDataset(Dataset):
 
     def article(self, article_idx):
         return self.articles[int(article_idx)]
+

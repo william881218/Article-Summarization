@@ -3,10 +3,16 @@ import torch.nn as nn
 from torch.autograd import Variable
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 import numpy as np
-from data import SOS_ID, EOS_ID, PAD_ID, word_vec_d, GPU_DEVICE
+from data import SOS_ID, EOS_ID, PAD_ID, word_vec_d, DEVICE
 import random
 
 context_vector_dim = 128
+
+class Index2word(nn.Module):
+    def __init__(self, index2word):
+        self.index2word = index2word
+    def forward(self):
+        pass
 
 class WordEmbedding(nn.Module):
     def __init__(self, vocab_size, embedding_dim, matrix):
@@ -14,8 +20,13 @@ class WordEmbedding(nn.Module):
         self.embedding_layer = nn.Embedding(vocab_size, embedding_dim)
         self.embedding_layer.weight.data.copy_(torch.FloatTensor(matrix))
 
-    def forward(self, input):
+    def forward(self, input, predicting=False):
         with torch.no_grad():
+            if not predicting:
+                input = input.to(DEVICE)
+            else:
+                input = input.cpu()
+            #print(input)
             output = self.embedding_layer(input.long())
         return output
 
@@ -26,17 +37,25 @@ class Encoder(nn.Module):
         """Define layers for a rnn encoder"""
         super(Encoder, self).__init__()
         self.vocab_size = vocab_size
-        self.gru = nn.GRU(embedding_size, output_size, batch_first=True)
+        self.gru = nn.GRU(embedding_size, output_size, batch_first=True, bidirectional=True)
+        self.linear = nn.Linear(output_size * 2, output_size)
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, input_seqs, input_lengths, hidden=None):
         packed = pack_padded_sequence(input_seqs, input_lengths, batch_first=True)
-        packed_outputs, hidden = self.gru(packed, hidden)
-        outputs, output_lengths = pad_packed_sequence(packed_outputs, batch_first=True)
-        return outputs, hidden
+        packed = packed.to(DEVICE)
+        packed_outputs, hidden = self.gru(packed)
+        batch_size = hidden.size(1)
+
+        hidden = hidden.transpose(0, 1).contiguous().reshape(1, batch_size, -1)
+        hidden = self.linear(hidden)
+        hidden = self.sigmoid(hidden)
+
+        return packed_outputs, hidden
 
 class Decoder(nn.Module):
 
-    def __init__(self, hidden_size, output_size, max_length, teacher_forcing_ratio, index2vec):
+    def __init__(self, hidden_size, output_size, max_length, teacher_forcing_ratio):
         """Define layers for a  rnn decoder"""
         super(Decoder, self).__init__()
 
@@ -48,12 +67,13 @@ class Decoder(nn.Module):
 
         self.max_length = max_length
         self.teacher_forcing_ratio = teacher_forcing_ratio
-        self.index2vec = index2vec
 
-    def forward_step(self, inputs, hidden):
+    def forward_step(self, inputs, hidden, index2vec, predicting=False):
         # inputs: (time_steps=1, batch_size)
         #batch_size = inputs.size(0)
-        embedded = self.index2vec(inputs).squeeze(2)
+        embedded = index2vec(inputs, predicting).squeeze(2)
+        if predicting:
+            embedded = embedded.to(DEVICE)
         #print(embedded.shape)
         rnn_output, hidden = self.gru(embedded, hidden)  # S = T(1) x B x H
         #print('rnn output')
@@ -68,7 +88,7 @@ class Decoder(nn.Module):
         #print(output.shape)
         return output, hidden
 
-    def forward(self, context_vector, targets=None, predicting=False):
+    def forward(self, context_vector, targets=None, index2vec=None, predicting=False):
         # Prepare variable for decoder on time_step_0
         max_target_length = self.max_length
 
@@ -89,23 +109,18 @@ class Decoder(nn.Module):
 
         decoder_input = Variable(torch.LongTensor([[SOS_ID] * batch_size]).view(batch_size, 1, 1))
 
-        if torch.cuda.is_available():
-            decoder_input = decoder_input.cuda(GPU_DEVICE)
-            decoder_outputs = decoder_outputs.cuda(GPU_DEVICE)
-
         use_teacher_forcing = True if random.random() > self.teacher_forcing_ratio else False
 
         if predicting:
             for t in range(self.max_length):
-                decoder_outputs_on_t, decoder_hidden = self.forward_step(decoder_input, decoder_hidden)
+                decoder_outputs_on_t, decoder_hidden = self.forward_step(decoder_input, decoder_hidden, index2vec, predicting=True)
                 decoder_outputs[t] = decoder_outputs_on_t
                 topv, topi = torch.topk(decoder_outputs_on_t, 1)
                 decoder_input = topi.view(batch_size, 1, 1)
             return decoder_outputs, decoder_hidden
 
-
         for t in range(max_target_length):
-            decoder_outputs_on_t, decoder_hidden = self.forward_step(decoder_input, decoder_hidden)
+            decoder_outputs_on_t, decoder_hidden = self.forward_step(decoder_input, decoder_hidden, index2vec)
             #print(decoder_outputs_on_t)
             #print(decoder_outputs_on_t.shape)
 
@@ -115,6 +130,7 @@ class Decoder(nn.Module):
             else:
                 topv, topi = torch.topk(decoder_outputs_on_t, 1)
                 decoder_input = topi.view(batch_size, 1, 1)
+                #print('not teacher', decoder_input)
 
         return decoder_outputs, decoder_hidden
 
@@ -125,15 +141,14 @@ class Seq2Seq(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, inputs, targets):
+    def forward(self, inputs, targets, index2vec):
         input_vars, input_lengths = inputs
         encoder_outputs, encoder_hidden = self.encoder.forward(input_vars, input_lengths)
-        decoder_outputs, decoder_hidden = self.decoder.forward(context_vector=encoder_hidden, targets=targets)
+        decoder_outputs, decoder_hidden = self.decoder.forward(context_vector=encoder_hidden, targets=targets, index2vec=index2vec)
         return decoder_outputs, decoder_hidden
 
-    def predict(self, inputs):
+    def predict(self, inputs, index2vec):
         input_vars, input_lengths = inputs
         encoder_outputs, encoder_hidden = self.encoder.forward(input_vars, input_lengths)
-        decoder_outputs, decoder_hidden = self.decoder.forward(context_vector=encoder_hidden, targets=None, predicting=True)
+        decoder_outputs, decoder_hidden = self.decoder.forward(context_vector=encoder_hidden, targets=None, predicting=True, index2vec=index2vec)
         return decoder_outputs, decoder_hidden
-

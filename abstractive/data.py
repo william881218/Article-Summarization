@@ -9,8 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 
-
-GPU_DEVICE = 1
+DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 word_vec_d = 50
 SOS_ID = 0
 EOS_ID = 1
@@ -18,10 +17,6 @@ PAD_ID = 2
 glove_path = '../glove.6B.50d.txt'
 softmax = nn.Softmax(dim=1)
 prediction_softmax = nn.Softmax(dim=0)
-if torch.cuda.is_available():
-    softmax = softmax.cuda(GPU_DEVICE)
-    prediction_softmax = prediction_softmax.cuda(GPU_DEVICE)
-#device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 #Read in word embedding
 def read_glove():
@@ -82,10 +77,6 @@ class ArticleDataset(Dataset):
             data['text'] = nltk.word_tokenize(data['text'])
             data['summary'] = [] if predicting else nltk.word_tokenize(data['summary'])
 
-            #handle the exception that there is no text
-            if len(data['text'][0]) == 0:
-                continue
-
             #creating word2index , index2word, index2vec dict
             for word in data['text'] + data['summary']:
                 #if the word hasn't been added into the dict
@@ -134,4 +125,3 @@ class ArticleDataset(Dataset):
 
     def article(self, article_idx):
         return self.articles[int(article_idx)]
-

@@ -67,7 +67,7 @@ def cycle(iterable):
         for x in iterable:
             yield x
 
-def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VALIDATION_DATASET_PATH, model_name=None):
+def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VALIDATION_DATASET_PATH, model_path=None):
 
     #prepare training dataset with DataLoader, which will return a batched, padded sample
     training_dataset = ArticleDataset(training_dataset_path)
@@ -142,7 +142,7 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
 
                 #training end, save the model
                 torch.save(rnn, '{}/ipoch={}_ibatch={}_loss={}_train_acc={}_valid_acc={}.pt'.
-                format(model_name, i_ipoch, i_batch, all_losses[-1], train_acc, valid_acc))
+                format(model_path, i_ipoch, i_batch, all_losses[-1], train_acc, valid_acc))
 
 
 

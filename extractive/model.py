@@ -8,7 +8,7 @@ class WordEmbedding(nn.Module):
         super(WordEmbedding, self).__init__()
         self.embedding_layer = nn.Embedding(vocab_size, embedding_dim)
         self.embedding_layer.weight.data.copy_(torch.from_numpy(matrix.astype('float32')))
-        
+
     def forward(self, input):
         with torch.no_grad():
             output = self.embedding_layer(input)

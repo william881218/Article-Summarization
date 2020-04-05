@@ -22,14 +22,11 @@ class WordEmbedding(nn.Module):
 
     def forward(self, input, predicting=False):
         with torch.no_grad():
-            if not predicting:
-                input = input.to(DEVICE)
-            else:
-                input = input.cpu()
+
+            input = input.to(DEVICE)
             #print(input)
             output = self.embedding_layer(input.long())
         return output
-
 
 class Encoder(nn.Module):
 
@@ -39,7 +36,7 @@ class Encoder(nn.Module):
         self.vocab_size = vocab_size
         self.gru = nn.GRU(embedding_size, output_size, batch_first=True, bidirectional=True)
         self.linear = nn.Linear(output_size * 2, output_size)
-        self.sigmoid = nn.Sigmoid()
+        self.tanh = nn.Tanh()
 
     def forward(self, input_seqs, input_lengths, hidden=None):
         packed = pack_padded_sequence(input_seqs, input_lengths, batch_first=True)
@@ -49,7 +46,7 @@ class Encoder(nn.Module):
 
         hidden = hidden.transpose(0, 1).contiguous().reshape(1, batch_size, -1)
         hidden = self.linear(hidden)
-        hidden = self.sigmoid(hidden)
+        hidden = self.tanh(hidden)
 
         return packed_outputs, hidden
 
@@ -63,40 +60,32 @@ class Decoder(nn.Module):
         self.output_size = output_size
         self.gru = nn.GRU(word_vec_d, hidden_size, batch_first=True)
         self.out = nn.Linear(hidden_size, output_size)
-        self.log_softmax = nn.LogSoftmax(dim=1)  # work with NLLLoss = CrossEntropyLoss
+        self.softmax = nn.LogSoftmax(dim=1)  # work with NLLLoss = CrossEntropyLoss
 
         self.max_length = max_length
         self.teacher_forcing_ratio = teacher_forcing_ratio
 
     def forward_step(self, inputs, hidden, index2vec, predicting=False):
-        # inputs: (time_steps=1, batch_size)
-        #batch_size = inputs.size(0)
-        embedded = index2vec(inputs, predicting).squeeze(2)
+
+        embedded = index2vec(inputs, predicting)
+        embedded = embedded.squeeze(2)
         if predicting:
             embedded = embedded.to(DEVICE)
-        #print(embedded.shape)
+
         rnn_output, hidden = self.gru(embedded, hidden)  # S = T(1) x B x H
-        #print('rnn output')
-        #print(rnn_output)
-        #print(rnn_output.shape)
         rnn_output = rnn_output.squeeze(1)  # squeeze the time dimension
-        #print('rnn output after squeeze')
-        #print(rnn_output)
-        output = self.log_softmax(self.out(rnn_output))  # S = B x O
-        #print('rnn output LogSoftmaxed')
-        #print(output)
-        #print(output.shape)
+        output = self.softmax(self.out(rnn_output))  # S = B x O
+
         return output, hidden
 
     def forward(self, context_vector, targets=None, index2vec=None, predicting=False):
         # Prepare variable for decoder on time_step_0
         max_target_length = self.max_length
+        batch_size = context_vector.size(1)
 
         if not predicting:
             target_vars, target_lengths = targets
             max_target_length = max(target_lengths)
-
-        batch_size = context_vector.size(1)
 
         # Pass the context vector
         decoder_hidden = context_vector
@@ -107,30 +96,30 @@ class Decoder(nn.Module):
             self.output_size
         ))  # (time_steps, batch_size, vocab_size)
 
+        #Prepare decoder input: [SOS_ID * batchsize]
         decoder_input = Variable(torch.LongTensor([[SOS_ID] * batch_size]).view(batch_size, 1, 1))
 
-        use_teacher_forcing = True if random.random() > self.teacher_forcing_ratio else False
+        use_teacher_forcing = True
 
         if predicting:
-            for t in range(self.max_length):
+            for t in range(max_target_length):
+                #Feed inputs into decoder and get the outputs
                 decoder_outputs_on_t, decoder_hidden = self.forward_step(decoder_input, decoder_hidden, index2vec, predicting=True)
                 decoder_outputs[t] = decoder_outputs_on_t
+
+                #Choose the most possible word and make it the next decoder input
                 topv, topi = torch.topk(decoder_outputs_on_t, 1)
                 decoder_input = topi.view(batch_size, 1, 1)
             return decoder_outputs, decoder_hidden
 
         for t in range(max_target_length):
             decoder_outputs_on_t, decoder_hidden = self.forward_step(decoder_input, decoder_hidden, index2vec)
-            #print(decoder_outputs_on_t)
-            #print(decoder_outputs_on_t.shape)
-
             decoder_outputs[t] = decoder_outputs_on_t
             if use_teacher_forcing:
                 decoder_input = target_vars[:, t:t+1].view(batch_size, 1, 1)
             else:
                 topv, topi = torch.topk(decoder_outputs_on_t, 1)
                 decoder_input = topi.view(batch_size, 1, 1)
-                #print('not teacher', decoder_input)
 
         return decoder_outputs, decoder_hidden
 

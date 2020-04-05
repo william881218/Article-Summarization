@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from torch.autograd import Variable
 
-DEVICE = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+DEVICE = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 word_vec_d = 50
 SOS_ID = 0
 EOS_ID = 1
@@ -34,8 +34,12 @@ class Article():
         self.id = article['id']
         self.index = int(idx)
         self.text_size = len(article['text'])
+
+        #turn tokenized text into vector
         a = np.array([index2vec[word2index[word]] for word in article['text']]).astype('float32')
         self.text = torch.from_numpy(a)
+
+        #turn tokenized summary into vector, none if using test dataset when predicting
         self.summary_size = 0 if predicting else len(article['summary']) + 1
         self.summary = None if predicting else torch.Tensor([word2index[word] for word in article['summary']] + [EOS_ID])
 
@@ -46,7 +50,6 @@ class Article():
         print('')
         print('summary: ')
         print(self.summary)
-
 
 """
 Json file keys:

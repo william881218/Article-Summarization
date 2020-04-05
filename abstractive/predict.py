@@ -9,7 +9,7 @@ OUTPUT_PATH = './output.jsonl'
 MODEL_PATH = './best.pt'
 INDEX2WORD_PATH = './model/index2word.pt'
 INDEX2VEC_PATH = './model/index2vec.pt'
-predict_batch_size = 5
+predict_batch_size = 100
 
 def pad_collate_predicting(batch):
     batch.sort(key=lambda x: len(x[0]), reverse=True)
@@ -22,7 +22,9 @@ def evaluate(seq2seq, batch, index2vec):
     with torch.no_grad():
         x_padded, x_len, idx = batch
         x_padded.to(DEVICE)
-
+        #print(x_padded)
+        #print(x_padded.shape)
+        #print('------')
         decoder_output, hidden = seq2seq.predict((x_padded, x_len), index2vec)
 
         topv, topi = torch.topk(decoder_output, 1)
@@ -40,13 +42,12 @@ def main(model_path=MODEL_PATH, input_file_path=INPUT_FILE_PATH, output_path=OUT
     #load the model
     seq2seq = torch.load(model_path, map_location=torch.device('cpu'))
     index2word = torch.load(INDEX2WORD_PATH, map_location=torch.device('cpu'))
-    index2vec = WordEmbedding(vocab_size=predicting_dataset.vocab_size,
-                              embedding_dim=word_vec_d, matrix=predicting_dataset.index2vec)
+    index2vec = torch.load(INDEX2VEC_PATH, map_location=torch.device('cpu'))
 
     #if gpu is available
     seq2seq = seq2seq.to(DEVICE)
-
-
+    index2vec = index2vec.to(DEVICE)
+    seq2seq.decoder.max_length = 50
 
     output_list = []
 
@@ -60,9 +61,12 @@ def main(model_path=MODEL_PATH, input_file_path=INPUT_FILE_PATH, output_path=OUT
                 if word.item() == EOS_ID:
                     break
                 output_str += [index2word.index2word[word.item()]]
-            output_list += ['\"id\": \"{}\", \"predict\": \"{}\"'.format(idx[i], ' '.join(output_str))]
+            output_list += ['\"id\": \"{}\", \"predict\": \"{}\"'.format(predicting_dataset.article(idx[i]).id, ' '.join(output_str))]
+            print(output_list[-1])
         print('batch {} complete'.format(i_batch))
 
+    #sort the output data by id and print into file
+    output_list.sort(key=lambda x: int(x[8:14]))
     with open(output_path, 'w') as output_file:
         for output in output_list:
             output_file.write('{' + output + '}\n')

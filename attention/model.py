@@ -96,6 +96,7 @@ class Decoder(nn.Module):
         attn_applied = torch.bmm(attn_weights.unsqueeze(1), encoder_outputs) #new context vector, B x 1 x hid dim
         gru_input = torch.cat((attn_applied, embedded), 2)
 
+        hidden = hidden.contiguous()
 
         rnn_output, rnn_hidden = self.gru(gru_input, hidden)  # S = B x T(1) x H
 
@@ -163,6 +164,7 @@ class Seq2Seq(nn.Module):
         self.decoder = decoder
 
     def forward(self, inputs, targets, index2vec):
+
         input_vars, input_lengths = inputs
         encoder_outputs, encoder_hidden = self.encoder.forward(input_vars, input_lengths)
         decoder_outputs, decoder_hidden = self.decoder.forward(encoder_outputs, encoder_hidden, targets=targets, index2vec=index2vec)

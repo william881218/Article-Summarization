@@ -10,15 +10,15 @@ from torch.nn.functional import one_hot
 
 TRAINING_DATASET_PATH = '../valid_short.jsonl'
 VALIDATION_DATASET_PATH = '../valid_short.jsonl'
-batch_size = 10
+batch_size = 20
 validation_batch_size = 20
 learning_rate = 0.1
 using_adam = True
-adam_learning_rate = 0.005
+adam_learning_rate = 0.002
 SGD_momentum = 0.8
 rnn_hidden_dim=64
 tag_type_num=1
-ipoch_num = 200
+ipoch_num = 10
 teacher_forcing_ratio = 0.5
 all_losses = []
 
@@ -30,6 +30,11 @@ def cycle(iterable):
 
 def train(seq2seq, batch, criterion, training_embedding):
     x_padded, y_padded, idx, x_len, y_len = batch
+    x_padded.to(DEVICE)
+    y_padded.to(DEVICE)
+    idx.to(DEVICE)
+    x_len.to(DEVICE)
+    y_len.to(DEVICE)
 
     decoder_output, hidden = seq2seq((x_padded, x_len), (y_padded, y_len), training_embedding)
 
@@ -59,13 +64,15 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
     valid_dataLoader_it = iter(cycle(valid_data_loader))
 
 
-
+    """
     encoder = Encoder(vocab_size=training_dataset.vocab_size, embedding_size=word_vec_d, output_size=context_vector_dim)
     decoder = Decoder(hidden_size=context_vector_dim,
                       output_size=training_dataset.vocab_size,
                       max_length=max_input_len, max_predict_len=max_predict_len,
                       teacher_forcing_ratio=teacher_forcing_ratio)
     seq2seq = Seq2Seq(encoder, decoder)
+    """
+    seq2seq = torch.load("model/last.pt", map_location=torch.device('cpu'))
     training_index2word = Index2word(training_dataset.index2word)
     torch.save(training_index2word, '{}/index2word.pt'.format(model_path))
     torch.save(training_embedding, '{}/index2vec.pt'.format(model_path))
@@ -93,12 +100,12 @@ def main(training_dataset_path=TRAINING_DATASET_PATH, validation_dataset_path=VA
             all_losses.append(cur_loss.item())
 
             #record the losses and print the info every 10 batch
-            if i_batch % 1 == 0:
+            if i_batch % 5 == 0:
                 with torch.no_grad():
                     valid_loss = train(seq2seq, next(valid_dataLoader_it), criterion, training_embedding)
                     print('ipoch [{}/{}], step [{}/{}], loss: {}, valid_loss: {}'.format(i_ipoch+1,
                       ipoch_num, i_batch + 1, len(training_dataset) // batch_size + 1, all_losses[-1], valid_loss.item()))
-                    if i_batch % 10 == 0:
+                    if i_batch % 200 == 0:
                         torch.save(seq2seq, '{}/ipoch={}_ibatch={}_loss={}_valid={}.pt'.format(model_path, i_ipoch, i_batch, all_losses[-1], valid_loss.item()))
 
         #print('ipoch {}, validates:'.format(i_ipoch))
